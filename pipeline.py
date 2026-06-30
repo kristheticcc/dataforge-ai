@@ -1,23 +1,7 @@
 # Imports
 import json
 import csv
-from openai import OpenAI
-import gradio as gr
-import os
-from dotenv import load_dotenv
-
-# Load environment variables from .env file
-load_dotenv(override=True)
-api_key = os.getenv("GROQ_API_KEY")
-
-# Setting up the client
-client = OpenAI(
-    base_url="https://api.groq.com/openai/v1",
-    api_key=api_key,
-)
-
-# Model
-model = "llama-3.3-70b-versatile"
+from config import client, model
 
 # Function to convert user request in natural language to structured JSON
 def generate_schema(user_request):
@@ -54,8 +38,7 @@ def generate_schema(user_request):
     try:
         json_schema = json.loads(json_schema)
     except json.decoder.JSONDecodeError:
-        print(json_schema)
-        return json_schema
+        return {"message": json_schema}
 
     # Handling missing data
     if json_schema.get("n_rows") == "NOT PROVIDED":
@@ -65,6 +48,7 @@ def generate_schema(user_request):
 
     return json_schema
 
+# Function to generate synthetic data and write to CSV
 def generate_dataset(json_schema):
     #  System message to guide LLM's behavior
     system_message = """
@@ -86,18 +70,20 @@ def generate_dataset(json_schema):
     returned_data = returned_data.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
     returned_dict = json.loads(returned_data)
 
+    # File path for CSV download (For UI)
+    file_path = f"{json_schema['dataset_name']}.csv"
+
     # Writing the generated data into a CSV file
     with open(f"{json_schema["dataset_name"]}.csv", "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=json_schema["column_names"].keys())
         writer.writeheader()
         writer.writerows(returned_dict)
 
+    return file_path
 
-def main():
-    print("Hello from dataforge-ai!")
-    json_schema = generate_schema("""Generate a dataset with columns: name, age, city, job_title""")
-    print(json_schema)
-    generate_dataset(json_schema)
-
-if __name__ == "__main__":
-    main()
+def generate(user_request):
+    schema = generate_schema(user_request)
+    if "message" in schema:
+        return schema["message"], None
+    file_path = generate_dataset(schema)
+    return "✅ Dataset ready to download!", file_path

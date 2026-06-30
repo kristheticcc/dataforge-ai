@@ -1,6 +1,6 @@
 # Imports
 import json
-
+import csv
 from openai import OpenAI
 import gradio as gr
 import os
@@ -19,6 +19,7 @@ client = OpenAI(
 # Model
 model = "llama-3.3-70b-versatile"
 
+# Function to convert user request in natural language to structured JSON
 def generate_schema(user_request):
     # system message to guide LLM's behavior
     system_message = """
@@ -62,12 +63,41 @@ def generate_schema(user_request):
     if json_schema.get("dataset_name") == "NOT PROVIDED":
         json_schema["dataset_name"] = "your_dataset"
 
-    print(json_schema)
     return json_schema
+
+def generate_dataset(json_schema):
+    #  System message to guide LLM's behavior
+    system_message = """
+    You are a data generator. Given a JSON schema, generate exactly n_rows of realistic data. 
+    Respect all constraints (types, ranges, unique values, enums). Respond ONLY with JSON array of objects, 
+    one object per row. Even if JSON schema has "NOT PROVIDED", don't leave any blanks, fill them with realistic values. 
+    No explanation, no markdown, just raw JSON array.
+    """
+
+    messages = [{"role": "system", "content": system_message}, {"role": "user", "content": json.dumps(json_schema)}]
+
+    response = client.chat.completions.create(
+        messages = messages,
+        model = model,
+    )
+
+    # Extracting JSON dictionary from the response
+    returned_data = response.choices[0].message.content
+    returned_data = returned_data.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+    returned_dict = json.loads(returned_data)
+
+    # Writing the generated data into a CSV file
+    with open(f"{json_schema["dataset_name"]}.csv", "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=json_schema["column_names"].keys())
+        writer.writeheader()
+        writer.writerows(returned_dict)
+
 
 def main():
     print("Hello from dataforge-ai!")
-    generate_schema("""Generate a dataset with columns: name, age, city, job_title""")
+    json_schema = generate_schema("""Generate a dataset with columns: name, age, city, job_title""")
+    print(json_schema)
+    generate_dataset(json_schema)
 
 if __name__ == "__main__":
     main()
